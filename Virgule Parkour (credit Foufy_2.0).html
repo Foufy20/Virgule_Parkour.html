@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Neo Jump - 2000 Niveaux Hardcore</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; user-select: none; }
+        
+        #ui {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; color: white; background: rgba(0,0,0,0.85); 
+            padding: 40px; border-radius: 15px; border: 3px solid #ff0000;
+            cursor: pointer; z-index: 10;
+            min-width: 300px;
+        }
+        
+        #crosshair {
+            position: absolute; top: 50%; left: 50%;
+            width: 4px; height: 4px;
+            background: red; border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 5;
+            box-shadow: 0 0 4px white;
+        }
+
+        #scorebox {
+            position: absolute; top: 20px; left: 20px; 
+            color: white; font-weight: bold; font-size: 1.2em;
+            text-shadow: 2px 2px 0 #000; pointer-events: none;
+        }
+
+        .hidden { display: none !important; }
+        h1 { margin: 0 0 20px 0; color: #ff3333; text-transform: uppercase; letter-spacing: 2px; }
+        p { margin: 10px 0; font-size: 1.1em; }
+        .key { color: #ffcc00; font-weight: bold; }
+        .warning { color: #ffaaaa; font-size: 0.9em; margin-top: 15px; font-style: italic; }
+		
+		.credit {
+  position: fixed;
+  bottom: 10px;
+  right: 10px;
+  font-size: 12px;
+  color: #666;
+  z-index: 1000;
+}
+    </style>
+</head>
+<body>
+
+    <div id="crosshair"></div>
+    <div id="scorebox">NIVEAUX : 2000 | MODE : HARDCORE</div>
+
+    <div id="ui">
+        <h1>NEO JUMP V6<br>HARDCORE</h1>
+        <p>Clique ici pour jouer.</p>
+        <hr style="border-color: #550000; margin: 20px 0;">
+        <p>Les murs sont plus larges que le sol.</p>
+        <p>Tu dois faire une vraie virgule.</p>
+        <br>
+        <p><span class="key">ZQSD</span> : Bouger</p>
+        <p><span class="key">ESPACE</span> : Sauter</p>
+        <p><span class="key">MOLETTE</span> : Zoom</p>
+        <p class="warning">Attention : 2000 niveaux chargés.</p>
+    </div>
+	
+	<a class=credit>Crédit HTML : Foufy_2.0<a>
+	
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        let scene, camera, renderer, player;
+        let obstacles = []; 
+        
+        // Physique ajustée pour le hardcore
+        const velocity = new THREE.Vector3();
+        const speed = 12.5;        // Un poil plus rapide pour les sauts larges
+        const jumpForce = 16.5;    // Un poil plus haut
+        const gravity = 45.0;      
+        let onGround = false;
+        
+        const keys = { z: false, q: false, s: false, d: false };
+        
+        // Caméra
+        let cameraAngle = Math.PI; 
+        let cameraHeight = 0.5;     
+        let cameraDist = 10; 
+
+        const ui = document.getElementById('ui');
+        const scoreBox = document.getElementById('scorebox');
+
+        init();
+        animate();
+
+        function init() {
+            window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            // Brouillard un peu plus loin pour voir l'infinité des niveaux
+            scene.fog = new THREE.Fog(0x87CEEB, 20, 90);
+
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
+            
+            // Lumières
+            const ambient = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+            scene.add(ambient);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(30, 50, 30);
+            dirLight.castShadow = true;
+            // Optimisation des ombres : on ne projette pas trop loin
+            dirLight.shadow.camera.top = 30;
+            dirLight.shadow.camera.bottom = -30;
+            dirLight.shadow.camera.left = -30;
+            dirLight.shadow.camera.right = 30;
+            scene.add(dirLight);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true }); // Antialias peut ralentir avec 2000 objets, mais c'est plus joli
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // --- GENERATION DES 2000 NIVEAUX ---
+            const matStart = new THREE.MeshStandardMaterial({ color: 0x22cc22 });
+            const matWall  = new THREE.MeshStandardMaterial({ color: 0xaa0000 }); // Rouge foncé
+            const matEnd   = new THREE.MeshStandardMaterial({ color: 0x0088ff });
+
+            const dist = 10; // Collés
+
+            for(let i = 0; i < 2000; i++) { // 100x plus (20 -> 2000)
+                let z = -(i * dist);
+                
+                // Départ (Vert) - Largeur 4
+                createBox(0, -1, 4 + z, 4, 2, 4, matStart);
+                
+                // Mur (Rouge) - HARDCORE - Largeur 5.2
+                // Comme le sol fait 4, le mur dépasse de 0.6 de chaque côté.
+                // Collision inévitable si on va tout droit.
+                createBox(0, 1, 0 + z, 5.2, 6, 2, matWall);
+                
+                // Arrivée (Bleu) - Largeur 4
+                createBox(0, -1, -4 + z, 4, 2, 4, matEnd);
+            }
+
+            // Joueur
+            const playerGeo = new THREE.BoxGeometry(0.8, 1.8, 0.8);
+            const playerMat = new THREE.MeshStandardMaterial({ color: 0xffdd00 }); 
+            player = new THREE.Mesh(playerGeo, playerMat);
+            player.position.set(0, 2, 4); 
+            player.geometry.computeBoundingBox();
+            player.castShadow = true;
+            scene.add(player);
+
+            setupInputs();
+            window.addEventListener('resize', onResize);
+        }
+
+        function createBox(x, y, z, w, h, d, mat) {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            
+            // Optimisation : On ne met des ombres que sur les 50 premiers pour ne pas laguer
+            if (z > -500) {
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+            }
+            
+            mesh.geometry.computeBoundingBox();
+            scene.add(mesh);
+            obstacles.push(mesh);
+        }
+
+        function setupInputs() {
+            ui.addEventListener('click', () => {
+                document.body.requestPointerLock();
+            });
+
+            document.addEventListener('pointerlockchange', () => {
+                if (document.pointerLockElement === document.body) {
+                    ui.classList.add('hidden');
+                } else {
+                    ui.classList.remove('hidden');
+                }
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (document.pointerLockElement === document.body) {
+                    cameraAngle -= e.movementX * 0.003;
+                    cameraHeight += e.movementY * 0.003;
+                    cameraHeight = Math.max(0.1, Math.min(1.4, cameraHeight));
+                }
+            });
+
+            document.addEventListener('wheel', (e) => {
+                if (document.pointerLockElement === document.body) {
+                    cameraDist += e.deltaY * 0.005;
+                    cameraDist = Math.max(4, Math.min(25, cameraDist));
+                }
+            });
+
+            document.addEventListener('keydown', e => {
+                switch(e.code) {
+                    case 'KeyW': case 'KeyZ': case 'ArrowUp': keys.z = true; break;
+                    case 'KeyS': case 'ArrowDown': keys.s = true; break;
+                    case 'KeyA': case 'KeyQ': case 'ArrowLeft': keys.q = true; break;
+                    case 'KeyD': case 'ArrowRight': keys.d = true; break;
+                    case 'Space': 
+                        if(onGround) { velocity.y = jumpForce; onGround = false; }
+                        break;
+                }
+            });
+            document.addEventListener('keyup', e => {
+                switch(e.code) {
+                    case 'KeyW': case 'KeyZ': case 'ArrowUp': keys.z = false; break;
+                    case 'KeyS': case 'ArrowDown': keys.s = false; break;
+                    case 'KeyA': case 'KeyQ': case 'ArrowLeft': keys.q = false; break;
+                    case 'KeyD': case 'ArrowRight': keys.d = false; break;
+                }
+            });
+        }
+
+        function checkCollision(newPos) {
+            const playerBox = new THREE.Box3().setFromCenterAndSize(
+                newPos, new THREE.Vector3(0.8, 1.8, 0.8)
+            );
+            
+            // OPTIMISATION CRITIQUE : On ne vérifie que les obstacles proches
+            // Avec 6000 objets, c'est obligatoire.
+            const playerZ = player.position.z;
+            
+            for(let obs of obstacles) {
+                // On ne checke que si l'obstacle est à moins de 12 unités du joueur
+                if (Math.abs(obs.position.z - playerZ) < 12) {
+                    const obsBox = obs.geometry.boundingBox.clone().applyMatrix4(obs.matrixWorld);
+                    if(playerBox.intersectsBox(obsBox)) return true;
+                }
+            }
+            return false;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = 0.016;
+
+            const moveDir = new THREE.Vector3(0, 0, 0);
+            
+            const camDir = new THREE.Vector3(Math.sin(cameraAngle), 0, Math.cos(cameraAngle)).normalize();
+            const camRight = new THREE.Vector3(Math.sin(cameraAngle - Math.PI/2), 0, Math.cos(cameraAngle - Math.PI/2)).normalize();
+
+            if(keys.z) moveDir.sub(camDir); 
+            if(keys.s) moveDir.add(camDir); 
+            if(keys.d) moveDir.sub(camRight); 
+            if(keys.q) moveDir.add(camRight); 
+            
+            if(moveDir.length() > 0) moveDir.normalize();
+
+            velocity.x = moveDir.x * speed;
+            velocity.z = moveDir.z * speed;
+            velocity.y -= gravity * dt;
+
+            // Physique X
+            let nextPos = player.position.clone();
+            nextPos.x += velocity.x * dt;
+            if(checkCollision(nextPos)) velocity.x = 0;
+            else player.position.x = nextPos.x;
+
+            // Physique Z
+            nextPos = player.position.clone();
+            nextPos.z += velocity.z * dt;
+            if(checkCollision(nextPos)) velocity.z = 0;
+            else player.position.z = nextPos.z;
+
+            // Physique Y
+            nextPos = player.position.clone();
+            nextPos.y += velocity.y * dt;
+            if(checkCollision(nextPos)) {
+                if(velocity.y < 0) onGround = true;
+                velocity.y = 0;
+            } else {
+                player.position.y = nextPos.y;
+                onGround = false;
+            }
+
+            if (moveDir.length() > 0.1) {
+                player.rotation.y = Math.atan2(velocity.x, velocity.z);
+            }
+
+            // Score Display Update
+            let currentLevel = Math.floor(Math.abs(player.position.z) / 10) + 1;
+            scoreBox.innerText = "NIVEAU : " + currentLevel + " / 2000";
+
+            // Respawn System
+            if(player.position.y < -15) {
+                let currentModule = Math.round(Math.abs(player.position.z) / 10);
+                let respawnZ = -(currentModule * 10) + 4;
+                player.position.set(0, 2, respawnZ); 
+                velocity.set(0, 0, 0);
+            }
+
+            // Caméra
+            const cx = player.position.x + Math.sin(cameraAngle) * cameraDist * Math.cos(cameraHeight);
+            const cz = player.position.z + Math.cos(cameraAngle) * cameraDist * Math.cos(cameraHeight);
+            const cy = player.position.y + cameraDist * Math.sin(cameraHeight);
+            
+            camera.position.set(cx, cy, cz);
+            camera.lookAt(player.position);
+
+            renderer.render(scene, camera);
+        }
+        
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
